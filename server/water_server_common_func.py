@@ -417,7 +417,7 @@ def unpack_upload_single_timing_lora(body_bytes=b''):
     # 电池低电压报警时间
     body_dict['low_voltage'] = format_90ef_datetime(bytes_to_bcd_str(body_bytes[49:53], 'reverse'))
     # 反向流量曾达到值
-    body_dict['reflow_up'] = convert_to_int(bytes_to_bcd_str(body_bytes[53:55], 'reverse'))
+    body_dict['reflow_up'] = convert_to_int(bytes_to_bcd_str(body_bytes[53:55], 'reverse')) / 1000
     # 反向流量报警时间
     body_dict['reflow_up_time'] = format_90ef_datetime(bytes_to_bcd_str(body_bytes[55:59], 'reverse'))
     # 0点总流量数据
