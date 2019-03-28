@@ -1,10 +1,22 @@
 __author__ = 'geyeg'
 
-from ws_vars import *
 import time
+from queue import Queue
+import requests
+import logging
 
 jgs_q = Queue(maxsize=10000)
-
+jgs_concentrators = ('C002A162', 'C002A163', 'C002A161', 'C002A157', 'C002A160', 'C002A159', 'C002A175', 'C002A158',
+                     'C002A170', 'C003A243', 'C003A244', 'C0070001', 'C0070002', 'C0070003', 'C002A054', 'C002A010',
+                     '02000088', '02000026', '02000079', '02000082', '02000034', '02000051', '02000077', '02000081',
+                     '02000004', 'C002A016', 'C002A065')
+# jgs_api_url = r'http://rocky1102.gnway.cc:8055/webservice.asmx/UploadRead'
+# jgs_api_url = r'http://61.180.38.85:8055/webservice.asmx/UploadRead'
+jgs_api_url = r'http://61.180.38.85:8055/webservice.asmx/UploadRead'
+http_headers_jgs = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "charset": "gbk"
+}
 
 '''
 post_data_jgs = {
@@ -15,15 +27,11 @@ post_data_jgs = {
 多项用#号分隔
 '''
 def http_post_worker_jgs():
-    # jgs_api_url = r'http://rocky1102.gnway.cc:8055/webservice.asmx/UploadRead'
-    # jgs_api_url = r'http://61.180.38.85:8055/webservice.asmx/UploadRead'
-    jgs_api_url = r'http://61.180.38.85:8055/webservice.asmx/UploadRead'
     post_data_jgs = {
         'remoteMeterCode': 'zh',
         'userCode': '079601',
         'meterData': ''
     }
-
     while True:
         if jgs_q.empty():
             time.sleep(1)
