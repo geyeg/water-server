@@ -117,11 +117,6 @@ headers = {
     "Content-Type": "application/json",
 }
 
-http_headers_jgs = {
-    "Content-Type": "application/x-www-form-urlencoded",
-    "charset": "gbk"
-}
-
 '''
 在线设备
 online_dev={
@@ -273,10 +268,6 @@ fd_living_count = dict()
 # 消息认证字段
 token = b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 
-
-jgs_concentrators = ('C002A162', 'C002A163', 'C002A161', 'C002A157', 'C002A160', 'C002A159', 'C002A175', 'C002A158', 'C002A170',
-                     'C003A243', 'C003A244', 'C0070001', 'C0070002', 'C0070003', 'C002A054', 'C002A010', '02000088', '02000026',
-                     '02000079', '02000082', '02000034', '02000051', '02000077', '02000081', '02000004', 'C002A016', 'C002A065')
 
 '''  指令格式样本
 ---------------------
