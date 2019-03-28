@@ -5,8 +5,9 @@ __author__ = 'geyeg'
 
 import socket
 import select
-from water_server_protocol_func import *
-from water_server_protocol_vars import *
+from ws_protocol import *
+from ws_vars import *
+from jgs import *
 
 # 接收队列，原始数据队列，接收线程收到数据，以(ip,port,raw_data,socket)形式放入队列
 # rcv_raw_data_q = Queue(maxsize=5000)
@@ -68,6 +69,8 @@ def rcv_worker(so_fd):
     logging.info('recv_hex_data:{}'.format((so_fd, bytes_to_show(data))))
 
     # 处理收到的包
+    # data_list = split_package(data)
+    # for single_data in data_list:
     hy_pack = unpack(data)
     if not hy_pack:
         logging.error('unpack error:{}'.format(bytes_to_show(data)))
@@ -153,6 +156,9 @@ def http_post_worker():
         post_meter_data = []
 
         hy_cmd = post_q.get()
+        # 转发到井岗山
+        if hy_cmd.get('concentrator_number') in jgs_concentrators:
+            jgs_q.put(hy_cmd)
         logging.debug('Get from post queue:{}'.format(json.dumps(hy_cmd)))
         cmd_list = convert_hy_to_server(hy_cmd)
         if not cmd_list:
@@ -354,7 +360,8 @@ def http_get_worker():
     global server_cmd_q
 
     while True:
-        time.sleep(1)
+        time.sleep(1.5)
+
         # 从服务器中读取下发指令
         try:
             response = requests.get(API_BASE_URL + '/command_data', headers=headers, params={'ip': ip, 'port': port})
@@ -378,10 +385,11 @@ def http_get_worker():
         if not isinstance(server_cmd_list, list):
             logging.error('List must in json level 1:{}'.format(server_cmd_list))
             continue
+
         # 过滤已知的暂未能处理的指令 ***
         # _f = server_socket_cmd_list.get('feature')
 
-        # logging.debug('http_get_command_from_server:{}'.format(server_cmd_list))
+        logging.debug('http_get_command_from_server:{}'.format(server_cmd_list))
 
         # 服务器下取出的指令是一个列表，列表内每个字典属于一个集中器的一条完整指令，拆分开按顺序放入 server_cmd_q 队列
         for cmd in server_cmd_list:
@@ -418,11 +426,10 @@ def http_get_worker():
                 '''
                 cmd['_c'] = 'assign_cmd'
                 # 指令名称feature转换，只转换下发，接收还是原来指令名称
-                if 'command_changer' in vars():
-                    if command_changer:
-                        new_feature = command_changer.get(cmd.get('feature'))
-                        if new_feature:
-                            cmd['feature'] = new_feature
+                if instruction_translation_dict:
+                    new_feature = instruction_translation_dict.get(cmd.get('feature'))
+                    if new_feature:
+                        cmd['feature'] = new_feature
                 server_cmd_q.put(cmd)
                 logging.debug('http_get_command_from_server:{}'.format(cmd))
             else:
@@ -471,6 +478,13 @@ def online_dev_man():
                 _t1.setDaemon(True)
                 _t1.start()
 
+            if 'http_post_worker_jgs' not in current_thread_name:
+                logging.critical('http_post_worker_jgs is broken, try to restart it.')
+                _t1 = threading.Thread(target=http_post_worker_jgs, args=())
+                _t1.setName('http_post_worker_jgs')
+                _t1.setDaemon(True)
+                _t1.start()
+
         concentrator_list = list(online_dev.keys()).copy()
         with lock:
             for _concentrator in concentrator_list:
@@ -511,13 +525,6 @@ def online_dev_man():
 
 
 if __name__ == '__main__':
-    # if is_test:
-    #     logging.basicConfig(level=logging.DEBUG,
-    #                         format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s'
-    #                         # filename='/var/amwares/water.log',
-    #                         # filemode='a+'
-    #                         )
-    # else:
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s',
                         # filename='/var/amwares/water.log',
@@ -581,6 +588,12 @@ if __name__ == '__main__':
     t4.setName('online_dev_man')
     t4.setDaemon(True)
     t4.start()
+
+    # post到井岗山专用线程
+    t5 = threading.Thread(target=http_post_worker_jgs, args=())
+    t5.setName('http_post_worker_jgs')
+    t5.setDaemon(True)
+    t5.start()
 
     # 启用异步
     # send_async = asyncio.get_event_loop()
