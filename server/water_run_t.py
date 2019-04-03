@@ -445,6 +445,10 @@ def http_get_worker():
 def online_dev_man():
     global fd_living_count
     global online_dev
+    global thread_http_get_worker
+    global thread_http_post_worker
+    global thread_send_worker
+    global thread_http_post_worker_jgs
 
     loop_time_count = 0
     while True:
@@ -460,30 +464,29 @@ def online_dev_man():
             logging.info('current thread:{}'.format(current_thread_name))  # 输出当前线程名称
             if 'send_worker' not in current_thread_name:
                 logging.critical('send_worker is broken, try to restart it.')
-                _t3 = threading.Thread(target=send_worker, args=())
-                _t3.setName('send_worker')
-                _t3.setDaemon(True)
-                _t3.start()
+                thread_send_worker = threading.Thread(target=send_worker, args=())
+                thread_send_worker.setName('send_worker')
+                thread_send_worker.setDaemon(True)
+                thread_send_worker.start()
             if 'http_post_worker' not in current_thread_name:
                 logging.critical('http_post_worker is broken, try to restart it.')
-                _t2 = threading.Thread(target=http_post_worker, args=())
-                _t2.setName('http_post_worker')
-                _t1.setDaemon(True)
-                _t2.start()
-
+                thread_http_post_worker = threading.Thread(target=http_post_worker, args=())
+                thread_http_post_worker.setName('http_post_worker')
+                thread_http_post_worker.setDaemon(True)
+                thread_http_post_worker.start()
             if 'http_get_worker' not in current_thread_name:
                 logging.critical('http_get_worker is broken, try to restart it.')
-                _t1 = threading.Thread(target=http_get_worker, args=())
-                _t1.setName('http_get_worker')
-                _t1.setDaemon(True)
-                _t1.start()
+                thread_http_get_worker = threading.Thread(target=http_get_worker, args=())
+                thread_http_get_worker.setName('http_get_worker')
+                thread_http_get_worker.setDaemon(True)
+                thread_http_get_worker.start()
 
             if 'http_post_worker_jgs' not in current_thread_name:
                 logging.critical('http_post_worker_jgs is broken, try to restart it.')
-                _t1 = threading.Thread(target=http_post_worker_jgs, args=())
-                _t1.setName('http_post_worker_jgs')
-                _t1.setDaemon(True)
-                _t1.start()
+                thread_http_post_worker_jgs = threading.Thread(target=http_post_worker_jgs, args=())
+                thread_http_post_worker_jgs.setName('http_post_worker_jgs')
+                thread_http_post_worker_jgs.setDaemon(True)
+                thread_http_post_worker_jgs.start()
 
         concentrator_list = list(online_dev.keys()).copy()
         with lock:
@@ -568,32 +571,32 @@ if __name__ == '__main__':
     logging.info('register to epoll:fileno-{}'.format(server_socket.fileno()))
     fd_to_socket[server_socket.fileno()] = server_socket
 
-    t1 = threading.Thread(target=http_get_worker, args=())
-    t1.setName('http_get_worker')
-    t1.setDaemon(True)
-    t1.start()
+    thread_http_get_worker = threading.Thread(target=http_get_worker, args=())
+    thread_http_get_worker.setName('http_get_worker')
+    thread_http_get_worker.setDaemon(True)
+    thread_http_get_worker.start()
 
-    t2 = threading.Thread(target=http_post_worker, args=())
+    thread_http_post_worker = threading.Thread(target=http_post_worker, args=())
     # t2 = Process(target=http_post_worker, args=())
-    t2.setName('http_post_worker')
-    t2.setDaemon(True)
-    t2.start()
+    thread_http_post_worker.setName('http_post_worker')
+    thread_http_post_worker.setDaemon(True)
+    thread_http_post_worker.start()
 
-    t3 = threading.Thread(target=send_worker, args=())
-    t3.setName('send_worker')
-    t3.setDaemon(True)
-    t3.start()
+    thread_send_worker = threading.Thread(target=send_worker, args=())
+    thread_send_worker.setName('send_worker')
+    thread_send_worker.setDaemon(True)
+    thread_send_worker.start()
 
-    t4 = threading.Thread(target=online_dev_man, args=())
-    t4.setName('online_dev_man')
-    t4.setDaemon(True)
-    t4.start()
+    thread_online_dev_man = threading.Thread(target=online_dev_man, args=())
+    thread_online_dev_man.setName('online_dev_man')
+    thread_online_dev_man.setDaemon(True)
+    thread_online_dev_man.start()
 
     # post到井岗山专用线程
-    t5 = threading.Thread(target=http_post_worker_jgs, args=())
-    t5.setName('http_post_worker_jgs')
-    t5.setDaemon(True)
-    t5.start()
+    thread_http_post_worker_jgs = threading.Thread(target=http_post_worker_jgs, args=())
+    thread_http_post_worker_jgs.setName('http_post_worker_jgs')
+    thread_http_post_worker_jgs.setDaemon(True)
+    thread_http_post_worker_jgs.start()
 
     # 启用异步
     # send_async = asyncio.get_event_loop()
