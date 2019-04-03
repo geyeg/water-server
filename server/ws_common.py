@@ -41,14 +41,14 @@ def verify_time(str_datetime, output_format='normal'):
             t = time.mktime(time.strptime(str_datetime, '%Y%m%d%H%M%S'))
             result = str(datetime.fromtimestamp(t))
         except ValueError as e:
-            result = ''
+            result = '19700101121212'
             logging.error('[{}] datetime format error.'.format(str_datetime))
     else:
         try:
             t = time.strptime(str_datetime, '%Y-%m-%d %H:%M:%S')
             result = time.strftime('%Y%m%d%H%M%S', t)
         except ValueError as e:
-            result = ''
+            result = '1970-01-01 12:12:12'
             logging.error('[{}] datetime format error.'.format(str_datetime))
     return result
 
