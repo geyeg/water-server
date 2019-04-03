@@ -493,14 +493,36 @@ def reverse_bcd(bcd=''):
 
 '''
 用于把接收到的二进制数据包的粘包处理，以 b'\x16' 作为分隔符切分成以列表返回的多个单独的包
+实际情景中存在包里面有\x16，所以用\x16\x68用为分隔符，切分后需要补回分隔符在原包中
 (适用于tcp接收到的包)
 '''
 def split_package(msg_bin=b''):
     # 数据类型不对返回空
     if not isinstance(msg_bin, bytes):
         return []
-    # 分隔符不存在返回原信息
-    if b'\x16' not in msg_bin:
+
+    # 不存在粘包的情况（单个正常包）
+    if is_checksum_pass(msg_bin):
         return [msg_bin]
-    msg_bin_list = list(filter(lambda x: x not in b'', msg_bin.split(b'\x16')))
-    return list(map(lambda x: x + b'\x16', msg_bin_list))
+
+    # 分隔符不存在返回原信息
+    if b'\x16\x68' not in msg_bin:
+        return [msg_bin]
+
+    # 存在粘包的情况,大于等于2个粘包
+    msg_bin_list = list(filter(lambda x: x not in b'', msg_bin.split(b'\x16\x68')))
+    if len(msg_bin_list) < 2:  # 要确保能切分出两个包
+        return []
+    new_package_list = list(map(lambda x: b'\x68' + x + b'\x16', msg_bin_list))
+    new_package_list[0] = new_package_list[0][1:]
+    new_package_list[len(new_package_list) - 1] = new_package_list[len(new_package_list) - 1][0:-1]
+    '''
+    length = 0
+    for new_package in new_package_list:
+        length += len(new_package)
+    if length % len(new_package_list) == 0:
+        return new_package_list
+    else:
+        return []
+    '''
+    return new_package_list
