@@ -68,66 +68,66 @@ def rcv_worker(so_fd):
 
     logging.info('recv_hex_data:{}'.format((so_fd, bytes_to_show(data))))
 
-    # 处理收到的包
-    # data_list = split_package(data)
-    # for single_data in data_list:
-    hy_pack = unpack(data)
-    if not hy_pack:
-        logging.error('unpack error:{}'.format(bytes_to_show(data)))
-        return ''
+    # 预处理收到的包，解决存在粘包的情况
+    data_list = split_package(data)
+    for single_data in data_list:
+        hy_pack = unpack(single_data)
+        if not hy_pack:
+            logging.error('unpack error:{}'.format(bytes_to_show(single_data)))
+            return ''
 
-    # 更新在线设备表
-    _concentrator = hy_pack.get('concentrator_number')
-    if not _concentrator:
-        logging.error('Concentrator_number not found:{}'.format(hy_pack))
-        return ''
-    with lock:
+        # 更新在线设备表
+        _concentrator = hy_pack.get('concentrator_number')
+        if not _concentrator:
+            logging.error('Concentrator_number not found:{}'.format(hy_pack))
+            return ''
+        with lock:
+            if _concentrator in online_dev:
+                online_dev[_concentrator]['living_count'] = 0  # 每次有连接，重置计数器
+                online_dev[_concentrator]['fd'] = so_fd
+            else:  # 设备不在列表时创建
+                online_dev[_concentrator] = dict()
+                online_dev[_concentrator]['fd'] = so_fd
+                online_dev[_concentrator]['living_count'] = 0
+                online_dev[_concentrator]['ser'] = 0
+                online_dev[_concentrator]['is_sending'] = False
+                online_dev[_concentrator]['is_catch_reply'] = False
+                online_dev[_concentrator]['reply_cmd'] = ''
+                online_dev[_concentrator]['reply_cmd_afn'] = ''
+                online_dev[_concentrator]['id'] = ''
+                fd_to_connector[so_fd] = _concentrator
+
+        logging.info('recv_hex_to_json:{}'.format(json.dumps(hy_pack, indent=4)))
+        hy_pack['_c'] = 'apply_cmd'  # 上行
+
+        # 放入上报队列
+        if hy_pack['_f'] in need_post_feature_list:  #在此列表之内的feature需要上报
+            hy_pack['feature'] = hy_pack['_f']
+            post_q.put(hy_pack)
+
+        # 如果需要回复，放入回复队列
+        if hy_pack['_f'] in need_reply_feature_list:  # 在此列表之内的feature需要回复
+            hy_pack['feature'] = hy_pack['_f']
+            server_cmd_q.put(hy_pack)
+            logging.debug('add to reply queue:{}'.format(hy_pack))
+
+        if hy_pack['_f'] in no_need_handle_feature_list:  #不需要回复的指令就是服务器下行回复的指令
+            # logging.info('')
+            # if hy_pack['ser'] == online_dev[_concentrator_number]['wait_ser']:
+                # hy_pack['_c'] = 'assign_cmd_reply'  # 下行指令回复
+                # hy_pack['id'] = online_dev[_concentrator_number]['id']
+                # online_dev_lock.acquire()
+                # online_dev[_concentrator_number]['is_wait_reply'] = False
+                # online_dev_lock.release()
+                # post_q.put(hy_pack)
+            pass
+
+        # 检测是否捕获回复指令
         if _concentrator in online_dev:
-            online_dev[_concentrator]['living_count'] = 0  # 每次有连接，重置计数器
-            online_dev[_concentrator]['fd'] = so_fd
-        else:  # 设备不在列表时创建
-            online_dev[_concentrator] = dict()
-            online_dev[_concentrator]['fd'] = so_fd
-            online_dev[_concentrator]['living_count'] = 0
-            online_dev[_concentrator]['ser'] = 0
-            online_dev[_concentrator]['is_sending'] = False
-            online_dev[_concentrator]['is_catch_reply'] = False
-            online_dev[_concentrator]['reply_cmd'] = ''
-            online_dev[_concentrator]['reply_cmd_afn'] = ''
-            online_dev[_concentrator]['id'] = ''
-            fd_to_connector[so_fd] = _concentrator
-
-    logging.info('recv_hex_to_json:{}'.format(json.dumps(hy_pack, indent=4)))
-    hy_pack['_c'] = 'apply_cmd'  # 上行
-
-    # 放入上报队列
-    if hy_pack['_f'] in need_post_feature_list:  #在此列表之内的feature需要上报
-        hy_pack['feature'] = hy_pack['_f']
-        post_q.put(hy_pack)
-
-    # 如果需要回复，放入回复队列
-    if hy_pack['_f'] in need_reply_feature_list:  # 在此列表之内的feature需要回复
-        hy_pack['feature'] = hy_pack['_f']
-        server_cmd_q.put(hy_pack)
-        logging.debug('add to reply queue:{}'.format(hy_pack))
-
-    if hy_pack['_f'] in no_need_handle_feature_list:  #不需要回复的指令就是服务器下行回复的指令
-        # logging.info('')
-        # if hy_pack['ser'] == online_dev[_concentrator_number]['wait_ser']:
-            # hy_pack['_c'] = 'assign_cmd_reply'  # 下行指令回复
-            # hy_pack['id'] = online_dev[_concentrator_number]['id']
-            # online_dev_lock.acquire()
-            # online_dev[_concentrator_number]['is_wait_reply'] = False
-            # online_dev_lock.release()
-            # post_q.put(hy_pack)
-        pass
-
-    # 检测是否捕获回复指令
-    if _concentrator in online_dev:
-        if online_dev[_concentrator]['is_catch_reply']:
-            if hy_pack['_f'] == online_dev[_concentrator]['reply_cmd_afn']:
-                with lock:
-                    online_dev[_concentrator]['reply_cmd'] = hy_pack
+            if online_dev[_concentrator]['is_catch_reply']:
+                if hy_pack['_f'] == online_dev[_concentrator]['reply_cmd_afn']:
+                    with lock:
+                        online_dev[_concentrator]['reply_cmd'] = hy_pack
 
 
 '''
