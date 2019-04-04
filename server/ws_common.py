@@ -487,7 +487,7 @@ def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
     body_dict['meter_data_values'] = list(map(convert_to_int_90ef, meter_data_values))
     body_dict['unit'] = unit.get(body_bytes[109])
     if not body_dict['unit']:
-        body_dict['unit'] = 'null'
+        body_dict['unit'] = ''
     body_dict['meter_time'] = verify_time(bytes_to_bcd_str(body_bytes[110:116], 'reverse'))
     # body_dict['meter_time'] = now()
     st0 = body_bytes[116]
