@@ -41,7 +41,7 @@ def verify_time(str_datetime, output_format='normal'):
             t = time.mktime(time.strptime(str_datetime, '%Y%m%d%H%M%S'))
             result = str(datetime.fromtimestamp(t))
         except ValueError as e:
-            result = '19700101121212'
+            result = '1970-01-01 12:12:12'
             logging.error('[{}] datetime format error.'.format(str_datetime))
     else:
         try:
@@ -457,6 +457,39 @@ def unpack_upload_single_timing_lora_big(body_bytes=b''):
     body_dict['unit'] = unit.get(body_bytes[108])
     body_dict['meter_time'] = verify_time(bytes_to_bcd_str(body_bytes[109:116], 'reverse'))
     # 表计状态
+    st0 = body_bytes[116]
+    # 阀门状态
+    # body_dict['state_valve'] = meter_status_valve[body_bytes[30] & 0b00000011]
+    body_dict['state_valve'] = st0 & 0b00000011
+    # 电池电压
+    # body_dict['state_voltage_level'] = meter_status_voltage_level[body_bytes[30] & 0b00000100 >> 2]
+    body_dict['state_voltage_level'] = (st0 & 0b00000100) >> 2
+    # 电子铅封
+    body_dict['state_elock'] = (st0 & 0b00100000) >> 5
+    # 温度传感器
+    # body_dict['state_temperature_sensor'] = meter_status_temperature_sensor[body_bytes[30] & 0b01000000 >> 6]
+    body_dict['state_temperature_sensor'] = (st0 & 0b01000000) >> 6
+    # 阀门响应标志
+    # body_dict['state_valve_response'] = meter_status_valve_response[body_bytes[30] & 0b10000000 >> 7]
+    body_dict['state_valve_response'] = (st0 & 0b10000000) >> 7
+    return body_dict
+
+
+'''
+解包：大口径水表15分钟读数上传
+'''
+def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
+    body_dict = dict()
+    # body_dict['collect_time'] = verify_time(bytes_to_bcd_str(body_bytes[0:6], 'reverse'))
+    body_dict['collect_time'] = now()
+    body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:13])
+    meter_data_values = [bytes_to_bcd_str(body_bytes[13 + i:13 + i + 4], 'reverse') for i in range(0, 96)]
+    body_dict['meter_data_values'] = list(map(convert_to_int_90ef, meter_data_values))
+    body_dict['unit'] = unit.get(body_bytes[109])
+    if not body_dict['unit']:
+        body_dict['unit'] = 'null'
+    body_dict['meter_time'] = verify_time(bytes_to_bcd_str(body_bytes[110:116], 'reverse'))
+    # body_dict['meter_time'] = now()
     st0 = body_bytes[116]
     # 阀门状态
     # body_dict['state_valve'] = meter_status_valve[body_bytes[30] & 0b00000011]
