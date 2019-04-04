@@ -69,13 +69,16 @@ upload_single_timing_lora_big  大口径水表定时上传
 feature_to_afn = dict(
     upload_single=0x84,  # 点抄901F
     upload_single_lora=0x53,  # 点抄90EF
-    upload_single_timing_lora_big=0x61,  # 大口径水表定时上传，每次一个表
+    upload_single_timing_lora_big=0x61,  # 大口径水表定时上传，每次一个表(带全天24小时读数)
+    upload_single_timing_lora_big_15min=0x6F,  # 大口径水表定时上传，每次一个表（带全天15分钟读数）
     upload_single_timing_lora=0x65,  # 90EF定时上传(无线小表定时上传，每次一个表)
     runonce_upload_multiple_timing=0x9D,  # 集抄901F（每次多个表）
     upload_multiple_timing=0x96,  # 901F定时上传（每次多个表）
     upload_multiple = 0x83,  # 抄读多表
-    upload_sensor_pressure_temperature = 0x60,  # 传感器值上传，单值，压力、温度
+    upload_sensor_pressure_temperature = 0x60,  # 压力、温度传感器单值上传
     upload_sensor_pressure_multiple = 0x62,  # 压力传感器多值上传
+    upload_liquid_level=0x54,  # 液位高度数据上传
+    upload_valve_position=0x56,  # 阀门开度上传
     close_valve=0x81,
     open_valve=0x82,
     close_all_valve=0x51,  # 关阀一个集中器下所有水表的阀门
@@ -93,8 +96,6 @@ feature_to_afn = dict(
     heartbeat=0x94,
     login=0x95,
     logout=0x97,
-    upload_liquid_level=0x54,  # 液位高度数据上传
-    upload_valve_position=0x56,  # 阀门开度上传
     set_valve_position=0x55  # 阀门开度控制设置
 )
 afn_to_feature = dict((v, k) for k, v in feature_to_afn.items())
@@ -151,6 +152,7 @@ control_code = dict(
     upload_single_timing_lora=b'\x80',
     upload_single_lora=b'\xC0',
     upload_single_timing_lora_big=b'\x60',
+    upload_single_timing_lora_big_15min=b'\x60',
     upload_single=b'\x70',
     upload_multiple=b'\x70',
     set_upload_time_stamp_and_cycle_unit=b'\x70',
@@ -240,14 +242,14 @@ server_handle_feature_list = ['close_valve', 'open_valve', 'set_doc', 'read_doc'
 
 # 需要把结果上报给服务器的feature
 need_post_feature_list = ['upload_multiple_timing', 'upload_single_timing_lora', 'heartbeat',
-                          'upload_single_timing_lora_big', 'upload_single',
+                          'upload_single_timing_lora_big', 'upload_single_timing_lora_big_15min', 'upload_single',
                           'upload_sensor_pressure_multiple', 'upload_sensor_pressure_temperature',
                           'upload_liquid_level', 'upload_valve_position']
 
 # 接收到需要回复的feature
 need_reply_feature_list = ['heartbeat', 'upload_single_timing_lora', 'logout', 'login',
-                           'upload_single_timing_lora_big', 'upload_sensor_pressure_multiple',
-                           'upload_sensor_pressure_temperature',
+                           'upload_single_timing_lora_big', 'upload_single_timing_lora_big_15min',
+                           'upload_sensor_pressure_multiple', 'upload_sensor_pressure_temperature',
                            'upload_liquid_level', 'upload_valve_position']
 
 # 接收到无需回复，也无需上报
