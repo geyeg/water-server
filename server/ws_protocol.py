@@ -102,6 +102,8 @@ def unpack(msg_bin=b''):
         gdw_pack['body'] = unpack_upload_single_timing_lora(raw_body_data).copy()
     elif gdw_pack['_f'] == 'upload_single_timing_lora_big':
         gdw_pack['body'] = unpack_upload_single_timing_lora_big(raw_body_data).copy()
+    elif gdw_pack['_f'] == 'upload_single_timing_lora_big_15min':
+        gdw_pack['body'] = unpack_upload_single_timing_lora_big_15min(raw_body_data).copy()
     elif gdw_pack['_f'] == 'upload_single':
         gdw_pack['body']['meter_number'] = bytes_to_bcd_str(raw_body_data[2:9], 'reverse')
         gdw_pack['body']['meter_value'] = convert_to_int_90ef(bytes_to_bcd_str(raw_body_data[9:], 'reverse'))
@@ -154,7 +156,7 @@ def unpack(msg_bin=b''):
         gdw_pack['body']['temperature_sensor']['temperature_value'] = struct.unpack('<H', raw_body_data[9:])
     elif gdw_pack['_f'] == 'upload_sensor_pressure_multiple':
         gdw_pack['body']['pressure_sensor'] = dict()
-        gdw_pack['body']['pressure_sensor']['number'] = bytes_to_bcd_str(raw_body_data[0:4], 'reverse')
+        gdw_pack['body']['pressure_sensor']['number'] = bytes_to_bcd_str(raw_body_data[0:7], 'reverse')
         gdw_pack['body']['pressure_sensor']['pressure_values'] = list()
         for i in range(0, 96):  # 8*12
             gdw_pack['body']['pressure_sensor']['pressure_values'].append(raw_body_data[1 + i * 2:3 + i * 2])
@@ -249,6 +251,10 @@ def pack(hy_cmd=dict()):
         byte_pack += struct.pack('<B', hy_cmd['body']['error'])
         byte_pack += struct.pack('>I', hy_cmd['body']['_mid'])  # ****************************
     elif hy_cmd['_f'] == 'upload_single_timing_lora_big':  # 大口径无线水表定时上传回复
+        byte_pack += str_bcd_to_bytes(convert_datetime_hy_to_gdw(now(fmt='time_stamp')))
+        byte_pack += struct.pack('<B', hy_cmd['body']['error'])
+        byte_pack += struct.pack('>I', 4)  # mid****************************
+    elif hy_cmd['_f'] == 'upload_single_timing_lora_big_15min':  # 大口径无线水表定时上传回复(15分钟)
         byte_pack += str_bcd_to_bytes(convert_datetime_hy_to_gdw(now(fmt='time_stamp')))
         byte_pack += struct.pack('<B', hy_cmd['body']['error'])
         byte_pack += struct.pack('>I', 4)  # mid****************************
@@ -392,6 +398,16 @@ def convert_hy_to_server(hy_dict=dict()):
         server_dict['concentrator_number'] = hy_dict['concentrator_number']
         server_dict['meter_number'] = hy_dict['body']['meter_number']
         server_dict['value'] = hy_dict['body']['meter_data_value_23']
+        server_dict['upload_time'] = now()
+        # server_dict['collect_time'] = hy_dict['body']['collect_time']
+        server_dict['collect_time'] = now()
+        server_dict['body'] = hy_dict['body'].copy()
+        server_list.append(server_dict)
+    elif _f == 'upload_single_timing_lora_big_15min':
+        server_dict['feature'] = _f
+        server_dict['concentrator_number'] = hy_dict['concentrator_number']
+        server_dict['meter_number'] = hy_dict['body']['meter_number']
+        server_dict['value'] = hy_dict['body']['meter_data_values'][0]
         server_dict['upload_time'] = now()
         # server_dict['collect_time'] = hy_dict['body']['collect_time']
         server_dict['collect_time'] = now()
