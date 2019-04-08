@@ -254,6 +254,10 @@ def pack(hy_cmd=dict()):
         byte_pack += str_bcd_to_bytes(convert_datetime_hy_to_gdw(now(fmt='time_stamp')))
         byte_pack += struct.pack('<B', hy_cmd['body']['error'])
         byte_pack += struct.pack('>I', 4)  # mid****************************
+    elif hy_cmd['_f'] == 'upload_single_timing_lora_big_15min':  # 大口径无线水表15min数据上传回复
+        byte_pack += str_bcd_to_bytes(convert_datetime_hy_to_gdw(now(fmt='time_stamp')))
+        byte_pack += struct.pack('<B', hy_cmd['body']['error'])
+        byte_pack += struct.pack('>I', 4)  # mid****************************
     elif hy_cmd['_f'] == 'upload_single_timing_lora_big_15min':  # 大口径无线水表定时上传回复(15分钟)
         byte_pack += str_bcd_to_bytes(convert_datetime_hy_to_gdw(now(fmt='time_stamp')))
         byte_pack += struct.pack('<B', hy_cmd['body']['error'])
@@ -558,7 +562,7 @@ def convert_server_to_hy(server_dict=dict()):
         hy_pack_dict['body']['time_stamp_server'] = now(fmt='time_stamp')
         hy_pack_dict['body']['error'] = 0
         hy_pack_dict['body']['_mid'] = server_dict['body']['_mid']
-    elif _feature == 'upload_single_timing_lora_big':
+    elif _feature in ['upload_single_timing_lora_big', 'upload_single_timing_lora_big_15min']:
         hy_pack_dict['is_confirm'] = False
         hy_pack_dict['_c'] = 'apply_cmd_reply'
         hy_pack_dict['body']['time_stamp_server'] = now(fmt='time_stamp')
