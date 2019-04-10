@@ -448,7 +448,7 @@ def unpack_upload_single_timing_lora_big(body_bytes=b''):
     body_dict = dict()
     body_dict['collect_time'] = now()
     # body_dict['meter_index'] = body_bytes[6]
-    body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:12])
+    body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:12], 'reverse')
 
     # 24小时读数BCD码，无小数位
     for mv in range(0, 24):
@@ -482,7 +482,7 @@ def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
     body_dict = dict()
     # body_dict['collect_time'] = verify_time(bytes_to_bcd_str(body_bytes[0:6], 'reverse'))
     body_dict['collect_time'] = now()
-    body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:13])
+    body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:13], 'reverse')
     meter_data_values = [bytes_to_bcd_str(body_bytes[13 + i:13 + i + 4], 'reverse') for i in range(0, 96)]
     body_dict['meter_data_values'] = list(map(convert_to_int_90ef, meter_data_values))
     body_dict['unit'] = unit.get(body_bytes[109])
@@ -505,6 +505,19 @@ def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
     # 阀门响应标志
     # body_dict['state_valve_response'] = meter_status_valve_response[body_bytes[30] & 0b10000000 >> 7]
     body_dict['state_valve_response'] = (st0 & 0b10000000) >> 7
+    return body_dict
+
+
+'''
+压力传感器15分钟上传
+'''
+def unpack_upload_sensor_pressure_multiple(body_bytes=b''):
+    body_dict = dict()
+    body_dict['pressure_sensor'] = dict()
+    body_dict['pressure_sensor']['number'] = bytes_to_bcd_str(body_bytes[0:7], 'reverse')
+    body_dict['pressure_sensor']['pressure_values'] = list()
+    for i in range(0, 96):  # 8*12
+        body_dict['pressure_sensor']['pressure_values'].append(struct.unpack('<H', body_bytes[7 + i * 2:7 + i * 2 + 2])[0])
     return body_dict
 
 
