@@ -117,7 +117,7 @@ def unpack(msg_bin=b''):
                 meter_index=struct.unpack('<H', raw_body_data[2 + _i * 8: 4 + _i * 8])[0],
                 meter_number=bytes_to_bcd_str(raw_body_data[4 + _i * 8: 10 + _i * 8])
             )
-            gdw_pack['body'].append(body_item)
+            gdw_pack['body'].append(body_item.copy())
     elif gdw_pack['_f'] in ['upload_multiple_timing', 'upload_single']:
         gdw_pack['body'] = list()
         meter_count = struct.unpack('<H', raw_body_data[0:2])[0]
@@ -155,11 +155,7 @@ def unpack(msg_bin=b''):
         gdw_pack['body']['pressure_sensor']['pressure_value'] = struct.unpack('<H', raw_body_data[5:8])
         gdw_pack['body']['temperature_sensor']['temperature_value'] = struct.unpack('<H', raw_body_data[9:])
     elif gdw_pack['_f'] == 'upload_sensor_pressure_multiple':
-        gdw_pack['body']['pressure_sensor'] = dict()
-        gdw_pack['body']['pressure_sensor']['number'] = bytes_to_bcd_str(raw_body_data[0:7], 'reverse')
-        gdw_pack['body']['pressure_sensor']['pressure_values'] = list()
-        for i in range(0, 96):  # 8*12
-            gdw_pack['body']['pressure_sensor']['pressure_values'].append(raw_body_data[1 + i * 2:3 + i * 2])
+        gdw_pack['body'] = unpack_upload_sensor_pressure_multiple(raw_body_data).copy()
     elif gdw_pack['_f'] in ['upload_liquid_level', 'upload_valve_position']:  # 液位高度数据上传、阀门开度上传
         gdw_pack['body']['meter_number'] = bytes_to_bcd_str(raw_body_data[0:7], 'reverse')
         gdw_pack['body']['meter_value'] = struct.unpack('<H', raw_body_data[7:])[0]
@@ -335,6 +331,9 @@ def pack(hy_cmd=dict()):
     elif hy_cmd['_f'] == 'set_valve_position':  # 阀门开度控制设置
         byte_pack += str_bcd_to_bytes(hy_cmd['body']['meter_number'], 'reverse')
         byte_pack += struct.pack('<H', hy_cmd['body']['meter_value'])
+    elif hy_cmd['_f'] == 'upload_sensor_pressure_multiple':
+        byte_pack += struct.pack('<B', feature_to_afn[hy_cmd['_f']])  # 回复 AFN 码
+        byte_pack += struct.pack('<B', hy_cmd['body']['error'])
     else:
         logging.error('pack body error.')
         return ''
@@ -493,6 +492,16 @@ def convert_hy_to_server(hy_dict=dict()):
         server_dict['body']['afn'] = hy_dict['body']['afn']
         server_dict['body']['error'] = hy_dict['body']['error']
         server_list.append(server_dict)
+    elif _f == 'upload_sensor_pressure_multiple':
+        server_dict['body'] = dict()
+        server_dict['body'] = hy_dict['body'].copy()
+        server_dict['feature'] = _f
+        server_dict['concentrator_number'] = hy_dict.get('concentrator_number')
+        server_dict['body']['pressure_sensor']['pressure_value'] = \
+            hy_dict['body']['pressure_sensor']['pressure_values'][-1]
+        server_dict['collect_time'] = now()
+        server_dict['upload_time'] = now()
+        server_list.append(server_dict)
     elif _f is None:
         server_list.append(hy_dict)
     else:
@@ -611,6 +620,11 @@ def convert_server_to_hy(server_dict=dict()):
         hy_pack_dict['body']['error'] = 0
     elif _feature == 'set_valve_position' and server_dict['_c'] == 'assign_cmd':
         hy_pack_dict['is_confirm'] = True
+    elif _feature == 'upload_sensor_pressure_multiple':
+        hy_pack_dict['is_confirm'] = False
+        hy_pack_dict['_c'] = 'apply_cmd_reply'
+        hy_pack_dict['body']['time_stamp_server'] = now(fmt='time_stamp')
+        hy_pack_dict['body']['error'] = 0
     else:
         logging.error('feature out of services:{}'.format(server_dict))
         hy_pack_dict = ''
