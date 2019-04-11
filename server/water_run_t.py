@@ -166,7 +166,8 @@ def http_post_worker():
             continue
 
         if hy_cmd.get('_f') in ['upload_multiple_timing', 'upload_single_timing_lora',
-                                'upload_single_timing_lora_big', 'upload_single', 'upload_single',
+                                'upload_single_timing_lora_big', 'upload_single_timing_lora_big_15min'
+                                'upload_single', 'upload_single',
                                 'upload_sensor_pressure_multiple', 'upload_sensor_pressure_temperature',
                                 'upload_liquid_level', 'upload_valve_position']:
             post_meter_data = cmd_list
@@ -603,8 +604,8 @@ if __name__ == '__main__':
     # rcv_async_loop = asyncio.get_event_loop()
 
     # udp thread
-    udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp_server.bind((HOST, PORT))
+    # udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # udp_server.bind((HOST, PORT))
 
     while True:
         events = server_receptionist.poll()
