@@ -52,6 +52,11 @@ def verify_time(str_datetime, output_format='normal'):
             logging.error('[{}] datetime format error.'.format(str_datetime))
     return result
 
+'''
+时间格式转换
+'''
+def time_format(str_datetime, fmt=''):
+    pass
 
 '''
 char_checksum 按字节计算校验和。每个字节被翻译为无符号整数
@@ -480,13 +485,15 @@ def unpack_upload_single_timing_lora_big(body_bytes=b''):
 '''
 def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
     body_dict = dict()
-    # body_dict['collect_time'] = verify_time(bytes_to_bcd_str(body_bytes[0:6], 'reverse'))
-    body_dict['collect_time'] = now()
+    body_dict['collect_time'] = verify_time('20' + bytes_to_bcd_str(body_bytes[0:6], 'reverse'))
+    # body_dict['collect_time'] = now()
     body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:13], 'reverse')
-    meter_data_values = [bytes_to_bcd_str(body_bytes[13 + i:13 + i + 4], 'reverse') for i in range(0, 96)]
+    meter_data_values = [bytes_to_bcd_str(body_bytes[13 + i * 4:13 + i * 4 + 4], 'reverse') for i in range(0, 96)]
     body_dict['meter_data_values'] = list(map(convert_to_int_90ef, meter_data_values))
-    body_dict['unit'] = unit.get(body_bytes[109])
-    if not body_dict['unit']:
+    _unit = unit.get(body_bytes[109])
+    if _unit:
+        body_dict['unit'] = _unit
+    else:
         body_dict['unit'] = ''
     body_dict['meter_time'] = verify_time(bytes_to_bcd_str(body_bytes[110:116], 'reverse'))
     # body_dict['meter_time'] = now()
@@ -510,6 +517,7 @@ def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
 
 '''
 压力传感器15分钟上传
+出错值\0xEE\0xEE(61166) 上报给服务器14141414
 '''
 def unpack_upload_sensor_pressure_multiple(body_bytes=b''):
     body_dict = dict()
@@ -517,7 +525,11 @@ def unpack_upload_sensor_pressure_multiple(body_bytes=b''):
     body_dict['pressure_sensor']['number'] = bytes_to_bcd_str(body_bytes[0:7], 'reverse')
     body_dict['pressure_sensor']['pressure_values'] = list()
     for i in range(0, 96):  # 8*12
-        body_dict['pressure_sensor']['pressure_values'].append(struct.unpack('<H', body_bytes[7 + i * 2:7 + i * 2 + 2])[0])
+        pressure_value = struct.unpack('<H', body_bytes[7 + i * 2:7 + i * 2 + 2])[0]
+        if pressure_value == 61166:
+            body_dict['pressure_sensor']['pressure_values'].append(14141414)
+        else:
+            body_dict['pressure_sensor']['pressure_values'].append(pressure_value)
     return body_dict
 
 
