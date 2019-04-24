@@ -11,7 +11,6 @@ jgs_concentrators = ('C002A162', 'C002A163', 'C002A161', 'C002A157', 'C002A160',
                      '02000088', '02000026', '02000079', '02000082', '02000034', '02000051', '02000077', '02000081',
                      '02000004', 'C002A016', 'C002A065')
 # jgs_api_url = r'http://rocky1102.gnway.cc:8055/webservice.asmx/UploadRead'
-# jgs_api_url = r'http://61.180.38.85:8055/webservice.asmx/UploadRead'
 jgs_api_url = r'http://61.180.38.85:8055/webservice.asmx/UploadRead'
 http_headers_jgs = {
     "Content-Type": "application/x-www-form-urlencoded",
