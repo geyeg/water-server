@@ -5,25 +5,12 @@ __author__ = 'geyeg'
 
 import socket
 import select
+import logging
+import logging.handlers
 from ws_protocol import *
-from ws_vars import *
 from jgs import *
-
-# 接收队列，原始数据队列，接收线程收到数据，以(ip,port,raw_data,socket)形式放入队列
-# rcv_raw_data_q = Queue(maxsize=5000)
-# 接收队列，原始数据转成字典的队列
-# rcv_kv_data_q = Queue(maxsize=5000)
-# 接收队列，已转成待post数据的字典格式
-post_q = Queue(maxsize=9000)
-# 发送队列，原始数据
-# send_raw_data_q = Queue(maxsize=5000)
-# 发送队列，字典格式的数据包
-# send_kv_data_q = Queue(maxsize=5000)
-# 发送队列
-# send_get_data_q = Queue(maxsize=5000)
-# 从服务器get回来的原始指令队列，已转字典格式
-server_cmd_q = Queue(maxsize=1000)
-
+from decode import *
+from assemble_packet import *
 
 # ---------------------------------- 以下是接收处理 ----------------------------------------------------------------
 def rcv_worker(so_fd):
@@ -68,19 +55,30 @@ def rcv_worker(so_fd):
 
     logging.info('recv_hex_data:{}'.format((so_fd, bytes_to_show(data))))
 
-    # 预处理收到的包，解决存在粘包的情况
+    # 解决存在粘包的情况
     data_list = split_package(data)
     for single_data in data_list:
-        hy_pack = unpack(single_data)
-        if not hy_pack:
-            logging.error('unpack error:{}'.format(bytes_to_show(single_data)))
-            return ''
+        recv_packet_bin_q.put((so_fd, single_data))
+
+
+def recv_worker():
+    while True:
+        if recv_packet_bin_q.empty():
+            time.sleep(1)
+            continue
+
+        so_fd, packet_bin = recv_packet_bin_q.get()
+        semi_packet = decode_head(packet_bin)
+
+        if not semi_packet:
+            logging.error('decode binary protocol header error.')
+            continue
 
         # 更新在线设备表
-        _concentrator = hy_pack.get('concentrator_number')
+        _concentrator = semi_packet.get('concentrator_number')
         if not _concentrator:
-            logging.error('Concentrator_number not found:{}'.format(hy_pack))
-            return ''
+            logging.error('Concentrator_number not found:{}'.format(semi_packet))
+            continue
         with lock:
             if _concentrator in online_dev:
                 online_dev[_concentrator]['living_count'] = 0  # 每次有连接，重置计数器
@@ -97,37 +95,34 @@ def rcv_worker(so_fd):
                 online_dev[_concentrator]['id'] = ''
                 fd_to_connector[so_fd] = _concentrator
 
-        logging.info('recv_hex_to_json:{}'.format(json.dumps(hy_pack, indent=4)))
-        hy_pack['_c'] = 'apply_cmd'  # 上行
+        # 加入一些额外标记
+        semi_packet['_c'] = 'apply_cmd'  # 上行
 
-        # 放入上报队列
-        if hy_pack['_f'] in need_post_feature_list:  #在此列表之内的feature需要上报
-            hy_pack['feature'] = hy_pack['_f']
-            post_q.put(hy_pack)
+        # 回复确认包
+        if semi_packet['CON'] == 1:  # 在此列表之内的feature需要回复
+            server_cmd_q.put(semi_packet)
+            logging.debug('add to reply queue:{}'.format(semi_packet))
 
-        # 如果需要回复，放入回复队列
-        if hy_pack['_f'] in need_reply_feature_list:  # 在此列表之内的feature需要回复
-            hy_pack['feature'] = hy_pack['_f']
-            server_cmd_q.put(hy_pack)
-            logging.debug('add to reply queue:{}'.format(hy_pack))
+        # hy_pack = dict()  # 存放完整单独一个包的字典
+        # hy_pack['body'] = dict()
+        if semi_packet['FIR'] == 1 and semi_packet['FIN'] == 1:  # 独立完整包
+            full_pack = decode_body(semi_packet['body_hex'], semi_packet)
+            logging.info('recv_hex_to_json:{}'.format(json.dumps(full_pack, indent=4)))
+            # 放入上报队列
+            if full_pack['_f'] in need_post_feature_list:  #在此列表之内的feature需要上报
+                post_q.put(full_pack)
+            # 检测是否捕获回复指令
+            if _concentrator in online_dev:
+                if online_dev[_concentrator]['is_catch_reply']:
+                    if full_pack['_f'] == online_dev[_concentrator]['reply_cmd_afn']:
+                        with lock:
+                            online_dev[_concentrator]['reply_cmd'] = full_pack.copy()
+        else:  # 碎片包
+            fragment_packet_q.put(semi_packet)
+            logging.debug('add fragment packet to queue')
 
-        if hy_pack['_f'] in no_need_handle_feature_list:  #不需要回复的指令就是服务器下行回复的指令
-            # logging.info('')
-            # if hy_pack['ser'] == online_dev[_concentrator_number]['wait_ser']:
-                # hy_pack['_c'] = 'assign_cmd_reply'  # 下行指令回复
-                # hy_pack['id'] = online_dev[_concentrator_number]['id']
-                # online_dev_lock.acquire()
-                # online_dev[_concentrator_number]['is_wait_reply'] = False
-                # online_dev_lock.release()
-                # post_q.put(hy_pack)
-            pass
-
-        # 检测是否捕获回复指令
-        if _concentrator in online_dev:
-            if online_dev[_concentrator]['is_catch_reply']:
-                if hy_pack['_f'] == online_dev[_concentrator]['reply_cmd_afn']:
-                    with lock:
-                        online_dev[_concentrator]['reply_cmd'] = hy_pack
+    # 如果循环退出，报异常日志
+    logging.critical('recv_worker is broken.')
 
 
 '''
@@ -165,17 +160,16 @@ def http_post_worker():
             logging.error('convert hy pack to server pack (dict) failure.')
             continue
 
-        if hy_cmd.get('_f') in ['upload_multiple_timing', 'upload_single_timing_lora',
-                                'upload_single_timing_lora_big', 'upload_single_timing_lora_big_15min'
-                                'upload_single', 'upload_single',
-                                'upload_sensor_pressure_multiple', 'upload_sensor_pressure_temperature',
-                                'upload_liquid_level', 'upload_valve_position']:
+        if hy_cmd.get('feature') in ['upload_multiple_timing', 'upload_single_timing_lora',
+                                     'upload_single_timing_lora_big', 'upload_single_timing_lora_big_15min',
+                                     'upload_single', 'upload_single',
+                                     'upload_sensor_pressure_multiple', 'upload_sensor_pressure_temperature',
+                                     'upload_liquid_level', 'upload_valve_position']:
             post_meter_data = cmd_list
         elif hy_cmd.get('_f') == 'heartbeat':
             post_command_data = cmd_list
         else:
-            logging.error('This message no need to post.')
-            logging.error(hy_cmd)
+            logging.error('This message no need to post:{}'.format(hy_cmd))
 
         # post_meter_data = [me_date]
         if post_command_data:
@@ -450,6 +444,8 @@ def online_dev_man():
     global thread_http_post_worker
     global thread_send_worker
     global thread_http_post_worker_jgs
+    global thread_recv_worker
+    global thread_assemble_worker
 
     loop_time_count = 0
     while True:
@@ -488,6 +484,20 @@ def online_dev_man():
                 thread_http_post_worker_jgs.setName('http_post_worker_jgs')
                 thread_http_post_worker_jgs.setDaemon(True)
                 thread_http_post_worker_jgs.start()
+
+            if 'recv_worker' not in current_thread_name:
+                logging.critical('recv_worker is broken, try to restart it.')
+                thread_recv_worker = threading.Thread(target=recv_worker, args=())
+                thread_recv_worker.setName('recv_worker')
+                thread_recv_worker.setDaemon(True)
+                thread_recv_worker.start()
+
+            if 'assemble_worker' not in current_thread_name:
+                logging.critical('assemble_worker is broken, try to restart it.')
+                thread_assemble_worker = threading.Thread(target=assemble_worker, args=())
+                thread_assemble_worker.setName('assemble_worker')
+                thread_assemble_worker.setDaemon(True)
+                thread_assemble_worker.start()
 
         concentrator_list = list(online_dev.keys()).copy()
         with lock:
@@ -529,12 +539,25 @@ def online_dev_man():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(threadName)s - %(message)s',
-                        # filename='/var/amwares/water.log',
-                        # filemode='a+'
-                        )
-    timed_rotating_file_handler()
+    # 定义日志输出格式
+    logger = logging.getLogger('')
+    logger.setLevel(logging.INFO)
+    fmt_str = '%(asctime)s - %(levelname)s - %(threadName)s - %(message)s'
+    # 初始化
+    logging.basicConfig(level=logging.INFO, filename=log_file, filemode='a+')
+    # 创建TimedRotatingFileHandler处理对象
+    # 间隔3600(S)创建新的名称为myLog%Y%m%d_%H%M%S.log的文件，并一直占用myLog文件。
+    files_handle = logging.handlers.TimedRotatingFileHandler(log_file, when='H', interval=8, backupCount=30)
+    # 设置日志文件后缀，以当前时间作为日志文件后缀名。
+    files_handle.suffix = '%Y%m%d_%H%M%S.log'
+    files_handle.extMatch = re.compile(r'^\d{4}\d{2}\d{2}_\d{2}\d{2}\d{2}')
+    # 设置日志输出级别和格式
+    # files_handle.setLevel(logging.INFO)
+    files_handle.setFormatter(logging.Formatter(fmt_str))
+    # 添加到日志处理对象集合
+    logger.handlers.pop()
+    logger.addHandler(files_handle)
+
     logging.getLogger("requests").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
@@ -572,13 +595,17 @@ if __name__ == '__main__':
     logging.info('register to epoll:fileno-{}'.format(server_socket.fileno()))
     fd_to_socket[server_socket.fileno()] = server_socket
 
+    thread_recv_worker = threading.Thread(target=recv_worker, args=())
+    thread_recv_worker.setName('recv_worker')
+    thread_recv_worker.setDaemon(True)
+    thread_recv_worker.start()
+
     thread_http_get_worker = threading.Thread(target=http_get_worker, args=())
     thread_http_get_worker.setName('http_get_worker')
     thread_http_get_worker.setDaemon(True)
     thread_http_get_worker.start()
 
     thread_http_post_worker = threading.Thread(target=http_post_worker, args=())
-    # t2 = Process(target=http_post_worker, args=())
     thread_http_post_worker.setName('http_post_worker')
     thread_http_post_worker.setDaemon(True)
     thread_http_post_worker.start()
@@ -598,6 +625,12 @@ if __name__ == '__main__':
     thread_http_post_worker_jgs.setName('http_post_worker_jgs')
     thread_http_post_worker_jgs.setDaemon(True)
     thread_http_post_worker_jgs.start()
+
+    # 启动碎片包组装线程
+    thread_assemble_worker = threading.Thread(target=assemble_worker, args=())
+    thread_assemble_worker.setName('assemble_worker')
+    thread_assemble_worker.setDaemon(True)
+    thread_assemble_worker.start()
 
     # 启用异步
     # send_async = asyncio.get_event_loop()
