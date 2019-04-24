@@ -13,7 +13,7 @@ def decode_head(msg_bin=b''):
     # 检查长度是否太短，太短会造成下面利用下标定位的操作出错，这里先防止
     if len(msg) < 20:
         logging.error('Package is too short:{}'.format(bytes_to_show(msg)))
-        return ''
+        return {}
     # 检测分隔符是否存在
     if (msg[0] != GDW_HEADER_TAG) or (msg[5] != GDW_HEADER_TAG) or (msg[-1] != GDW_END_TAG):
         logging.error('Package tag error:{}'.format(bytes_to_show(msg)))
@@ -21,12 +21,12 @@ def decode_head(msg_bin=b''):
     # checksum
     if not is_checksum_pass(msg):
         logging.error('package checksum error:{}'.format(bytes_to_show(msg)))
-        return ''
+        return {}
     # 检查长度是否出现错误，从包中读出长度,这里的长度不是真正的长度
     length, length_verify = struct.unpack('<HH', msg[1:5])
     if length != length_verify:
         logging.error('Length scope mismatch:{}'.format(bytes_to_show(msg)))
-        return ''
+        return {}
     # 取原始长度字段后两位D1D0位作为协议类型
     # gdw_pack['protocol_type'] = length & 0x0003
     '''
@@ -37,7 +37,7 @@ def decode_head(msg_bin=b''):
     length = int((length - 1) / 4)
     if length != len(msg[HEADER_SIZE:-2]):
         logging.error('Length error:{}'.format(bytes_to_show(msg)))
-        return ''
+        return {}
     gdw_pack['msg_len'] = length
     # 去掉无关数据
     msg = msg[HEADER_SIZE:-2]
@@ -56,11 +56,11 @@ def decode_head(msg_bin=b''):
     # 判断 AFN 是否超出处理范围
     if gdw_pack['AFN'] not in afn_to_feature:
         logging.error('AFN {} out of services.'.format(hex(gdw_pack['AFN'])))
-        return ''
+        return {}
     gdw_pack['_f'] = afn_to_feature.get(gdw_pack['AFN'])
     if not gdw_pack['_f']:
         logging.error('AFN name not found:{}'.format(bytes_to_show(msg)))
-        return ''
+        return {}
     # SEQ
     seq = int.from_bytes(msg[7:8], 'little')
     gdw_pack['TpV'] = (seq & 0b10000000) >> 7
@@ -98,6 +98,8 @@ def decode_body(raw_body_data=b'', head=dict()):
         heartbeat_time = heartbeat_time[0:2] + month_and_week_str + heartbeat_time[5:]
         payload['upload_time_stamp'] = '20' + heartbeat_time
         # gdw_pack['body']['upload_time_stamp'] = convert_datetime_gdw_to_hy(raw_body_data)
+    elif feature in ['login', 'logout']:
+        pass
     elif feature == 'upload_single_timing_lora':
         payload = unpack_upload_single_timing_lora(raw_body_data).copy()
     elif feature == 'upload_single_timing_lora_big':
@@ -163,7 +165,7 @@ def decode_body(raw_body_data=b'', head=dict()):
         payload['reply_afn'] = raw_body_data[0]
         payload['error'] = raw_body_data[1]
     else:
-        payload = ''
+        pass
 
     full_packet = head.copy()
     if full_packet['body_hex']:
