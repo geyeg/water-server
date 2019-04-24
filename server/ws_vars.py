@@ -20,6 +20,23 @@ HEADER_SIZE = 6
 
 GDW_HEADER_TAG = 0x68  #头部分隔符
 GDW_END_TAG = 0x16  #帧结束符
+# 接收队列，原始数据队列，接收线程收到数据，以(ip,port,raw_data,socket)形式放入队列
+# rcv_raw_data_q = Queue(maxsize=5000)
+# 接收队列，原始数据转成字典的队列
+# rcv_kv_data_q = Queue(maxsize=5000)
+# 接收队列，已转成待post数据的字典格式
+post_q = Queue(maxsize=9000)
+# 发送队列，原始数据
+# send_raw_data_q = Queue(maxsize=5000)
+# 发送队列，字典格式的数据包
+# send_kv_data_q = Queue(maxsize=5000)
+# 发送队列
+# send_get_data_q = Queue(maxsize=5000)
+# 从服务器get回来的原始指令队列，已转字典格式
+server_cmd_q = Queue(maxsize=1000)
+recv_single_packet_q = Queue(maxsize=10000)
+recv_packet_bin_q = Queue(maxsize=10000)
+
 
 '''
 GDW_AFN_SW_CLOSE = 0x81  # 81H    关阀                   关停水表
