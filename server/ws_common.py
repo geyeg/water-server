@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
-
+__ver__ = ''
 __author__ = 'geyeg'
 
 from datetime import datetime
@@ -207,32 +207,6 @@ def convert_number_to_address(number, dev_type='concentrator'):
 
 
 '''
-{0x00,0x00,0x64,0x03} => 00006403
-传入参数需用大括号格式
-dev_type 区分集中器还是水表
-'''
-'''
-def convert_address_to_number(me_address, dev_type='concentrator'):
-    if me_address and isinstance(me_address, str):
-        #大致检测，不严谨,以后改正则识别
-        if '0x' in me_address and ',' in me_address:
-            if me_address[0] == '{' and me_address[-1] == '}':
-                num = ''.join(''.join(me_address[1:-1].split(',')).split('0x'))
-                # if len(num) > 8:
-                #     num = num[-8:]
-        else:
-            num = ''
-    else:
-        num = ''
-    if dev_type == 'concentrator':
-        num = num[0:-2]
-    else:
-        # num = num[4:]
-        pass
-    return num
-'''
-
-'''
 字节流转BCD字符串
 输入：\x20\x28\x66
 输出：202866
@@ -326,26 +300,6 @@ def format_90ef_datetime(in_str=''):
     else:
         _result = in_str
     return _result
-
-
-def timed_rotating_file_handler():
-    # 定义日志输出格式
-    fmt_str = '%(asctime)s - %(levelname)s - %(threadName)s - %(message)s'
-    # 初始化
-    logging.basicConfig()
-
-    # 创建TimedRotatingFileHandler处理对象
-    # 间隔3600(S)创建新的名称为myLog%Y%m%d_%H%M%S.log的文件，并一直占用myLog文件。
-    files_handle = logging.handlers.TimedRotatingFileHandler(log_file, when='H', interval=8, backupCount=30)
-    # 设置日志文件后缀，以当前时间作为日志文件后缀名。
-    files_handle.suffix = '%Y%m%d_%H%M%S.log'
-    files_handle.extMatch = re.compile(r'^\d{4}\d{2}\d{2}_\d{2}\d{2}\d{2}')
-    # 设置日志输出级别和格式
-    files_handle.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(fmt_str)
-    files_handle.setFormatter(formatter)
-    # 添加到日志处理对象集合
-    logging.getLogger('').addHandler(files_handle)
 
 
 '''
@@ -490,14 +444,14 @@ def unpack_upload_single_timing_lora_big_15min(body_bytes=b''):
     body_dict['meter_number'] = bytes_to_bcd_str(body_bytes[6:13], 'reverse')
     meter_data_values = [bytes_to_bcd_str(body_bytes[13 + i * 4:13 + i * 4 + 4], 'reverse') for i in range(0, 96)]
     body_dict['meter_data_values'] = list(map(convert_to_int_90ef, meter_data_values))
-    _unit = unit.get(body_bytes[109])
+    _unit = unit.get(body_bytes[397])
     if _unit:
         body_dict['unit'] = _unit
     else:
         body_dict['unit'] = ''
-    body_dict['meter_time'] = verify_time(bytes_to_bcd_str(body_bytes[110:116], 'reverse'))
+    body_dict['meter_time'] = verify_time(bytes_to_bcd_str(body_bytes[398:405], 'reverse'))
     # body_dict['meter_time'] = now()
-    st0 = body_bytes[116]
+    st0 = body_bytes[404]
     # 阀门状态
     # body_dict['state_valve'] = meter_status_valve[body_bytes[30] & 0b00000011]
     body_dict['state_valve'] = st0 & 0b00000011
