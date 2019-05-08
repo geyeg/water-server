@@ -171,7 +171,6 @@ def unpack(msg_bin=b''):
 
     return gdw_pack
 
-
 '''
 字典格式打包成二进制字节流
 传入字典必要key
@@ -371,6 +370,7 @@ def convert_hy_to_server(hy_dict=dict()):
     server_dict['ip'] = ip
     server_dict['port'] = port
     if _f == 'heartbeat':
+        server_dict['body'] = dict()
         server_dict['concentrator_number'] = get_dict_val('concentrator_number', hy_dict)
         server_dict['feature'] = get_dict_val('_f', hy_dict)
         server_dict['category'] = ''
@@ -379,6 +379,8 @@ def convert_hy_to_server(hy_dict=dict()):
         # 由于集中器上传时间会严重出错（复位），这里改用服务器时间
         # server_dict['collect_time'] = verify_time(get_dict_val('upload_time_stamp', hy_dict['body']))
         server_dict['collect_time'] = verify_time(hy_dict['time_stamp_server'])
+        if hy_dict['body'].get('signal'):
+            server_dict['body']['signal'] = hy_dict['body']['signal']
         server_list.append(server_dict)
     elif _f in ['login', 'logout']:
         server_dict['concentrator_number'] = hy_dict.get('concentrator_number')
@@ -507,7 +509,7 @@ def convert_hy_to_server(hy_dict=dict()):
         server_list.append(hy_dict)
     else:
         logging.error('[HY to server]AFN out of services.')
-        return ''
+        return []
 
     return server_list
 
@@ -545,7 +547,8 @@ def convert_server_to_hy(server_dict=dict()):
     hy_pack_dict['_t'] = 'S2C'
     hy_pack_dict['PRM'] = 1
     hy_pack_dict['concentrator_number'] = server_dict['concentrator_number']
-    hy_pack_dict['concentrator_address'] = convert_number_to_address(server_dict['concentrator_number'], 'concentrator')
+    # hy_pack_dict['concentrator_address'] =
+    # convert_number_to_address(server_dict['concentrator_number'], 'concentrator')
     hy_pack_dict['TpV'] = 0
     hy_pack_dict['FIR'] = 1
     hy_pack_dict['FIN'] = 1
