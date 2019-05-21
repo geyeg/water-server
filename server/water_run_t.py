@@ -13,7 +13,7 @@ from decode import *
 from assemble_packet import *
 
 # ---------------------------------- 以下是接收处理 ----------------------------------------------------------------
-def rcv_worker(so_fd):
+def tcp_recv_handler(so_fd):
     global online_dev
     global post_q
     global fd_to_connector
@@ -55,7 +55,7 @@ def rcv_worker(so_fd):
 
     logging.info('recv_hex_data:{}'.format((so_fd, bytes_to_show(data))))
 
-    # 解决存在粘包的情况
+    # 解决存在粘包的情况(仅适合一个包内有多个完整包)
     data_list = split_package(data)
     for single_data in data_list:
         recv_packet_bin_q.put((so_fd, single_data))
@@ -68,7 +68,14 @@ def recv_worker():
             continue
 
         so_fd, packet_bin = recv_packet_bin_q.get()
-        semi_packet = decode_head(packet_bin)
+        if not packet_bin:
+            logging.error('Get null value from receive queue.')
+            continue
+        try:
+            semi_packet, body_hex = decode_head(packet_bin)
+        except Exception as e:
+            logging.error('decode head error:{}'.format(e))
+            continue
 
         if not semi_packet:
             logging.error('decode binary protocol header error.')
@@ -98,27 +105,33 @@ def recv_worker():
         # 加入一些额外标记
         semi_packet['_c'] = 'apply_cmd'  # 上行
 
-        # 回复确认包
-        if semi_packet['CON'] == 1:  # 在此列表之内的feature需要回复
-            server_cmd_q.put(semi_packet)
-            logging.debug('add to reply queue:{}'.format(semi_packet))
-
-        # hy_pack = dict()  # 存放完整单独一个包的字典
-        # hy_pack['body'] = dict()
-        if semi_packet['FIR'] == 1 and semi_packet['FIN'] == 1:  # 独立完整包
-            full_pack = decode_body(semi_packet['body_hex'], semi_packet)
-            logging.info('recv_hex_to_json:{}'.format(json.dumps(full_pack, indent=4)))
-            # 放入上报队列
-            if full_pack['_f'] in need_post_feature_list:  #在此列表之内的feature需要上报
-                post_q.put(full_pack)
-            # 检测是否捕获回复指令
-            if _concentrator in online_dev:
-                if online_dev[_concentrator]['is_catch_reply']:
-                    if full_pack['_f'] == online_dev[_concentrator]['reply_cmd_afn']:
-                        with lock:
-                            online_dev[_concentrator]['reply_cmd'] = full_pack.copy()
+        if (semi_packet['FIR'] == 1 and semi_packet['FIN'] == 1) or NO_USE_FIR_FIN_FLAG:  # 独立完整包
+            try:
+                full_pack = decode_body(body_hex, semi_packet)
+            except Exception as e:
+                logging.error('decode body error:{}'.format(e))
+                continue
+            if semi_packet['CON'] == 1:  # 回复
+                server_cmd_q.put(full_pack)
+                logging.debug('add to reply queue:{}'.format(full_pack))
+            if full_pack:
+                logging.info('recv_hex_to_json:{}'.format(json.dumps(full_pack, indent=4)))
+                # 放入上报队列
+                if full_pack['_f'] in need_post_feature_list:  #在此列表之内的feature需要上报
+                    post_q.put(full_pack)
+                # 检测是否捕获回复指令
+                if _concentrator in online_dev:
+                    if online_dev[_concentrator]['is_catch_reply']:
+                        if full_pack['_f'] == online_dev[_concentrator]['reply_cmd_afn']:
+                            with lock:
+                                online_dev[_concentrator]['reply_cmd'] = full_pack.copy()
+            else:
+                logging.error('packet body error:{}'.format(full_pack))
         else:  # 碎片包
-            fragment_packet_q.put(semi_packet)
+            fragment_packet_q.put((semi_packet, body_hex))
+            if semi_packet['CON'] == 1:  # 回复确认包
+                server_cmd_q.put(semi_packet)
+                logging.debug('add to reply queue:{}'.format(semi_packet))
             logging.debug('add fragment packet to queue')
 
     # 如果循环退出，报异常日志
@@ -178,9 +191,9 @@ def http_post_worker():
         if post_meter_data:
             http_post(API_BASE_URL + '/meter_data', post_meter_data)
             # 另外发一份到上海公司
-            if is_send_to_sh:
-                sh_data = dict(list=post_meter_data)
-                http_post(uri_meter_value_shanghai, sh_data, 1)
+            # if is_send_to_sh:
+            #     sh_data = dict(list=post_meter_data)
+            #     http_post(uri_meter_value_shanghai, sh_data, 1)
 
     logging.critical('http_post_worker is broken.')
 
@@ -221,7 +234,6 @@ def send_worker():
             logging.error('concentrator offline,can not send data [{}]'.format(server_cmd_dict))
 
 
-# noinspection PyBroadException
 def send_once_worker(server_cmd_dict):
     _concentrator = server_cmd_dict.get('concentrator_number')
     if not _concentrator:
@@ -280,7 +292,8 @@ def send_once_worker(server_cmd_dict):
             for _i in range(5):
                 is_reply_ok = False
                 try:
-                    fd_to_socket[online_dev[_concentrator]['fd']].sendall(byte_cmd)
+                    if _concentrator in online_dev:
+                        fd_to_socket[online_dev[_concentrator]['fd']].sendall(byte_cmd)
                 except OSError as e:
                     logging.error('Send error,can not send the command:{}'.format(hy_cmd_dict))
                     logging.error(e)
@@ -297,6 +310,7 @@ def send_once_worker(server_cmd_dict):
                         reply_cmd = online_dev[_concentrator]['reply_cmd']
                     except Exception as e:
                         logging.error('reply command not found:'.format(hy_cmd_dict))
+                        logging.error(e)
                     else:
                         if reply_cmd:
                             if reply_cmd['ser'] == hy_cmd_dict['ser'] and reply_cmd['_f'] == hy_cmd_dict['_f']:
@@ -339,18 +353,22 @@ def send_once_worker(server_cmd_dict):
             return ''
 
         if _concentrator in online_dev:
-            try:
-                fd_to_socket[online_dev[_concentrator]['fd']].sendall(byte_cmd)
-            except OSError as e:
-                logging.error('concentrator offline,can not send data:{}'.format(hy_cmd_dict))
-                logging.error(e)
+            if 'fd' in online_dev[_concentrator]:
+                try:
+                    fd_to_socket[online_dev[_concentrator]['fd']].sendall(byte_cmd)
+                except OSError as e:
+                    logging.error('concentrator offline,can not send data:{}'.format(hy_cmd_dict))
+                    logging.error(e)
+                else:
+                    logging.info('send_hex_data[{}]:{}'.format(_concentrator, bytes_to_show(byte_cmd)))
             else:
-                logging.info('send_hex_data[{}]:{}'.format(_concentrator, bytes_to_show(byte_cmd)))
+                logging.error('concentrator offline,can not send data [{}]'.format(hy_cmd_dict))
+                with lock:
+                    del(online_dev[_concentrator])
         else:
             logging.error('concentrator offline,can not send data [{}]'.format(hy_cmd_dict))
 
 
-# noinspection PyBroadException
 def http_get_worker():
     global server_cmd_q
 
@@ -455,10 +473,13 @@ def online_dev_man():
         time.sleep(1)
 
         if loop_time_count % 20 == 0:
+            concentrator_list = list(online_dev.keys()).copy()
             logging.info('online concentrator:{}'.format(concentrator_list))  # 输出在线集中器列表
             logging.info('q_post:{} | q_send:{}'.format(post_q.qsize(), server_cmd_q.qsize()))  # 输出队列状态
             current_thread_name = [_t.getName() for _t in threading.enumerate()]
             logging.info('current thread:{}'.format(current_thread_name))  # 输出当前线程名称
+            logging.info('fd_living_list:{}'.format(fd_living_count))
+            logging.info('fd_to_connector:{}'.format(fd_to_connector))
             if 'send_worker' not in current_thread_name:
                 logging.critical('send_worker is broken, try to restart it.')
                 thread_send_worker = threading.Thread(target=send_worker, args=())
@@ -502,8 +523,7 @@ def online_dev_man():
         concentrator_list = list(online_dev.keys()).copy()
         with lock:
             for _concentrator in concentrator_list:
-                living_count = online_dev[_concentrator].get('living_count')
-                if living_count:
+                if 'living_count' in online_dev[_concentrator]:
                     if online_dev[_concentrator]['living_count'] > TIME_OUT:
                         _fd = online_dev[_concentrator]['fd']
                         if _fd in fd_to_socket:
@@ -517,34 +537,42 @@ def online_dev_man():
                             del(fd_to_socket[_fd])
                         if _concentrator in online_dev:
                             del(online_dev[_concentrator])
+                        logging.info('no heartbeat timeout:[concentrator={}]'.format(_concentrator))
                     else:
                         online_dev[_concentrator]['living_count'] += 1
 
         fd_living_count_list = list(fd_living_count.keys()).copy()
         with lock:
             for _fd in fd_living_count_list:
-                living_count = fd_living_count.get(_fd)
-                if living_count:
-                    if fd_living_count[_fd] > TIME_OUT:
-                        if fd_to_connector.get(_fd) not in online_dev:
-                            if _fd in fd_to_socket:
-                                fd_to_socket[_fd].close()
-                                server_receptionist.unregister(_fd)
-                            if _fd in fd_to_socket:
-                                del(fd_to_socket[_fd])
-                            if _fd in fd_to_connector:
-                                del(fd_to_connector[_fd])
-                    else:
-                        fd_living_count[_fd] += 1
+                if fd_living_count[_fd] > 300:
+                    _ip = ''
+                    _port = ''
+                    if _fd in fd_to_socket:
+                        _ip, _port = fd_to_socket[_fd].getpeername()
+                    logging.error('socket timeout:[fd={},ip={},port={},concentrator={}]'
+                                  .format(_fd, _ip, _port, fd_to_connector.get(_fd)))
+                    if fd_to_connector.get(_fd) in online_dev:
+                        del(online_dev[fd_to_connector.get(_fd)])
+                    if _fd in fd_to_socket:
+                        fd_to_socket[_fd].close()
+                        server_receptionist.unregister(_fd)
+                    if _fd in fd_to_socket:
+                        del(fd_to_socket[_fd])
+                    if _fd in fd_to_connector:
+                        del(fd_to_connector[_fd])
+                    del(fd_living_count[_fd])
+                else:
+                    fd_living_count[_fd] += 1
 
 
 if __name__ == '__main__':
     # 定义日志输出格式
     logger = logging.getLogger('')
-    logger.setLevel(logging.INFO)
+    # logger.setLevel(logging.INFO)
     fmt_str = '%(asctime)s - %(levelname)s - %(threadName)s - %(message)s'
     # 初始化
     logging.basicConfig(level=logging.INFO, filename=log_file, filemode='a+')
+    # logging.basicConfig(level=logging.INFO)
     # 创建TimedRotatingFileHandler处理对象
     # 间隔3600(S)创建新的名称为myLog%Y%m%d_%H%M%S.log的文件，并一直占用myLog文件。
     files_handle = logging.handlers.TimedRotatingFileHandler(log_file, when='H', interval=8, backupCount=30)
@@ -552,7 +580,7 @@ if __name__ == '__main__':
     files_handle.suffix = '%Y%m%d_%H%M%S.log'
     files_handle.extMatch = re.compile(r'^\d{4}\d{2}\d{2}_\d{2}\d{2}\d{2}')
     # 设置日志输出级别和格式
-    # files_handle.setLevel(logging.INFO)
+    files_handle.setLevel(logging.INFO)
     files_handle.setFormatter(logging.Formatter(fmt_str))
     # 添加到日志处理对象集合
     logger.handlers.pop()
@@ -578,8 +606,8 @@ if __name__ == '__main__':
     s.setsockopt(socket.SOL_TCP, socket.SO_KEEPINTVL, 3)
     s.setsockopt(socket.SOL_TCP, socket.SO_KEEPCNT, 2)
     '''
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 600)
-    server_socket.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 600)
+    # server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 600)
+    server_socket.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 300)
     server_socket.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 75)
     server_socket.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 3)
 
@@ -632,14 +660,6 @@ if __name__ == '__main__':
     thread_assemble_worker.setDaemon(True)
     thread_assemble_worker.start()
 
-    # 启用异步
-    # send_async = asyncio.get_event_loop()
-    # rcv_async_loop = asyncio.get_event_loop()
-
-    # udp thread
-    # udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # udp_server.bind((HOST, PORT))
-
     while True:
         events = server_receptionist.poll()
         if not events:
@@ -648,11 +668,11 @@ if __name__ == '__main__':
             if fd == server_socket.fileno():  # 可以超进值，如果留空，一直阻塞到有数据才返回结果
                 # 如果活动socket为当前服务器socket，表示有新连接
                 connection, address = server_socket.accept()
-                connection.settimeout(TIME_OUT)
-                connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, TIME_OUT)
-                connection.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 600)
-                connection.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 150)
-                connection.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 3)
+                # connection.settimeout(600)
+                # connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 600)
+                # connection.setsockopt(socket.SOL_TCP, socket.TCP_KEEPIDLE, 600)
+                # connection.setsockopt(socket.SOL_TCP, socket.TCP_KEEPINTVL, 150)
+                # connection.setsockopt(socket.SOL_TCP, socket.TCP_KEEPCNT, 3)
                 new_fd = connection.fileno()
                 connection.setblocking(False)
                 server_receptionist.register(connection.fileno(),
@@ -663,7 +683,7 @@ if __name__ == '__main__':
             elif event & select.EPOLLIN:
                 # 可读事件,接收数据
                 fd_living_count[fd] = 0  # 重置计数器
-                rcv_worker(fd)
+                tcp_recv_handler(fd)
             elif event & select.EPOLLHUP:
                 # 关闭端口事件
                 server_receptionist.unregister(fd)
