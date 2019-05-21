@@ -123,7 +123,7 @@ def decode_body(raw_body_data=b'', head=dict()):
         payload['meter_number'] = bytes_to_bcd_str(raw_body_data[2:9], 'reverse')
         payload['meter_value'] = convert_to_int_90ef(bytes_to_bcd_str(raw_body_data[9:], 'reverse'))
     elif feature == 'set_doc':  # 下载档案
-        payload = head['data_Fn']
+        payload['error'] = head['data_Fn']
     elif feature == 'read_doc':  # 读取档案
         payload = list()
         meter_count = struct.unpack('<H', raw_body_data[0:2])[0]
