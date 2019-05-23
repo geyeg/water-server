@@ -113,6 +113,8 @@ def decode_body(raw_body_data=b'', head=dict()):
         # gdw_pack['body']['upload_time_stamp'] = convert_datetime_gdw_to_hy(raw_body_data)
     elif feature in ['login', 'logout']:
         pass
+    elif feature in ['close_valve', 'open_valve', 'close_all_valve', 'open_all_valve']:
+        pass
     elif feature == 'upload_single_timing_lora':
         payload = decode_upload_single_timing_lora(raw_body_data).copy()
     elif feature == 'upload_single_timing_lora_big':
